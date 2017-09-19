@@ -4,26 +4,31 @@ import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 import android.net.Uri;
+import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.support.v7.app.AppCompatActivity;
-import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
-import android.widget.Button;
 import android.widget.ImageView;
-
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
 
 public class MainActivity extends AppCompatActivity {
-    private ImageView mImage;
-    private Button mAddImage;
-    private Bitmap mBitmap;
+    private ImageView ivHead;
+
+    private Bitmap head;
     protected static final int CHOOSE_PICTURE = 0;
     protected static final int TAKE_PICTURE = 1;
     protected static Uri tempUri;
     private static final int CROP_SMALL_PICTURE = 2;
+    private static String path="/sdcard/myHead/";//sd路径
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -33,11 +38,21 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void initUI() {
-        mImage= (ImageView) findViewById(R.id.iv_image);
-        mAddImage= (Button) findViewById(R.id.btn_add_image);
+        ivHead= (ImageView) findViewById(R.id.iv_image);
+        Bitmap bt = BitmapFactory.decodeFile(path + "head.jpg");//从Sd中找头像，转换成Bitmap
+        if(bt!=null){
+            @SuppressWarnings("deprecation")
+            Drawable drawable = new BitmapDrawable(bt);//转换成drawable
+            ivHead.setImageDrawable(drawable);
+        }else{
+            /**
+             *	如果SD里面没有则需要从服务器取头像，取回来的头像再保存在SD中
+             *
+             */
+        }
     }
     private void initListeners() {
-        mAddImage.setOnClickListener(new View.OnClickListener() {
+        ivHead.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 showChoosePicDialog();
@@ -58,9 +73,9 @@ public class MainActivity extends AppCompatActivity {
             public void onClick(DialogInterface dialog, int which) {
                 switch (which) {
                     case CHOOSE_PICTURE: // 选择本地照片
-                        Intent openAlbumIntent = new Intent(
-                                Intent.ACTION_GET_CONTENT);
-                        openAlbumIntent.setType("image/*");
+                        Intent openAlbumIntent = new Intent(Intent.ACTION_PICK,null);
+                        openAlbumIntent.setDataAndType(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*");
+//                        openAlbumIntent.setType("image/*");
                         //用startActivityForResult方法，待会儿重写onActivityResult()方法，拿到图片做裁剪操作
                         startActivityForResult(openAlbumIntent, CHOOSE_PICTURE);
                         break;
@@ -68,7 +83,7 @@ public class MainActivity extends AppCompatActivity {
                         Intent openCameraIntent = new Intent(
                                 MediaStore.ACTION_IMAGE_CAPTURE);
                         tempUri = Uri.fromFile(new File(Environment
-                                .getExternalStorageDirectory(), "temp_image.jpg"));
+                                .getExternalStorageDirectory(), "head.jpg"));
                         // 将拍照所得的相片保存到SD卡根目录
                         openCameraIntent.putExtra(MediaStore.EXTRA_OUTPUT, tempUri);
                         startActivityForResult(openCameraIntent, TAKE_PICTURE);
@@ -84,14 +99,22 @@ public class MainActivity extends AppCompatActivity {
         if (resultCode == MainActivity.RESULT_OK) {
             switch (requestCode) {
                 case TAKE_PICTURE:
-                    cutImage(tempUri); // 对图片进行裁剪处理
+                    cropPhoto(tempUri); // 对图片进行裁剪处理
                     break;
                 case CHOOSE_PICTURE:
-                    cutImage(data.getData()); // 对图片进行裁剪处理
+                    cropPhoto(data.getData()); // 对图片进行裁剪处理
                     break;
                 case CROP_SMALL_PICTURE:
                     if (data != null) {
-                        setImageToView(data); // 让刚才选择裁剪得到的图片显示在界面上
+                        Bundle extras = data.getExtras();
+                        head = extras.getParcelable("data");
+                        if(head!=null){
+                            /**
+                             * 上传服务器代码
+                             */
+                            setPicToView(head);//保存在SD卡中
+                            ivHead.setImageBitmap(head);//用ImageView显示出来
+                        }
                     }
                     break;
             }
@@ -100,7 +123,7 @@ public class MainActivity extends AppCompatActivity {
     /**
      * 裁剪图片方法实现
      */
-    protected void cutImage(Uri uri) {
+    protected void cropPhoto(Uri uri) {
         if (uri == null) {
             Log.i("alanjet", "The uri is not exist.");
         }
@@ -122,13 +145,30 @@ public class MainActivity extends AppCompatActivity {
     /**
      * 保存裁剪之后的图片数据
      */
-    protected void setImageToView(Intent data) {
-        Bundle extras = data.getExtras();
-        if (extras != null) {
-            mBitmap = extras.getParcelable("data");
-            //这里图片是方形的，可以用一个工具类处理成圆形（很多头像都是圆形，这种工具类网上很多不再详述）
-            mImage.setImageBitmap(mBitmap);//显示图片
-            //在这个地方可以写上上传该图片到服务器的代码，后期将单独写一篇这方面的博客，敬请期待...
+    private void setPicToView(Bitmap mBitmap) {
+        String sdStatus = Environment.getExternalStorageState();
+        if (!sdStatus.equals(Environment.MEDIA_MOUNTED)) { // 检测sd是否可用
+            return;
+        }
+        FileOutputStream b = null;
+        File file = new File(path);
+        file.mkdirs();// 创建文件夹
+        String fileName =path + "head.jpg";//图片名字
+        try {
+            b = new FileOutputStream(fileName);
+            mBitmap.compress(Bitmap.CompressFormat.JPEG, 100, b);// 把数据写入文件
+
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                //关闭流
+                b.flush();
+                b.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
         }
     }
 
